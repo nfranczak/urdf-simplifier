@@ -257,11 +257,13 @@ func processLink(link *Link, baseDir string) {
 	}
 }
 
-// resolvePackageURI converts package:// URIs to file paths
-// Example: package://ur_description/meshes/ur20/collision/shoulder.stl
-//       -> <baseDir>/ur_description/meshes/ur20/collision/shoulder.stl
-// If the standard path doesn't exist, it searches for the file by name in baseDir
+// resolvePackageURI resolves mesh file paths, handling both package:// URIs and regular paths
+// Supports:
+//   - package://ur_description/meshes/ur20/collision/shoulder.stl
+//   - meshes/shoulder.stl (relative path)
+//   - /absolute/path/to/shoulder.stl
 func resolvePackageURI(uri string, baseDir string) string {
+	// Handle package:// URIs
 	if strings.HasPrefix(uri, "package://") {
 		// Remove "package://" prefix
 		relativePath := strings.TrimPrefix(uri, "package://")
@@ -293,5 +295,12 @@ func resolvePackageURI(uri string, baseDir string) string {
 		// Return standard path even if it doesn't exist (will fail later with clear error)
 		return standardPath
 	}
-	return uri
+
+	// Handle absolute paths - use as-is
+	if filepath.IsAbs(uri) {
+		return uri
+	}
+
+	// Handle relative paths - resolve relative to baseDir
+	return filepath.Join(baseDir, uri)
 }
