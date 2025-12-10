@@ -84,14 +84,14 @@ type Box struct {
 }
 
 type Joint struct {
-	XMLName  xml.Name `xml:"joint"`
-	Name     string   `xml:"name,attr"`
-	Type     string   `xml:"type,attr"`
-	Parent   *Parent  `xml:"parent"`
-	Child    *Child   `xml:"child"`
-	Origin   *Origin  `xml:"origin"`
-	Axis     *Axis    `xml:"axis"`
-	Limit    *Limit   `xml:"limit"`
+	XMLName  xml.Name  `xml:"joint"`
+	Name     string    `xml:"name,attr"`
+	Type     string    `xml:"type,attr"`
+	Parent   *Parent   `xml:"parent"`
+	Child    *Child    `xml:"child"`
+	Origin   *Origin   `xml:"origin"`
+	Axis     *Axis     `xml:"axis"`
+	Limit    *Limit    `xml:"limit"`
 	Dynamics *Dynamics `xml:"dynamics"`
 }
 
@@ -119,9 +119,9 @@ type Limit struct {
 }
 
 type Dynamics struct {
-	XMLName xml.Name `xml:"dynamics"`
-	Damping float64  `xml:"damping,attr"`
-	Friction float64 `xml:"friction,attr"`
+	XMLName  xml.Name `xml:"dynamics"`
+	Damping  float64  `xml:"damping,attr"`
+	Friction float64  `xml:"friction,attr"`
 }
 
 func main() {
@@ -234,9 +234,11 @@ func processLink(link *Link, baseDir string) {
 
 			// Resolve package:// URI to file path
 			stlPath := resolvePackageURI(mesh.Filename, baseDir)
+			fmt.Println("stlPath: ", stlPath)
 
 			// Calculate bounding box
 			bbox, err := stl.CalculateBoundingBoxFromFile(stlPath)
+
 			if err != nil {
 				fmt.Printf("Warning: Could not calculate bounding box for %s: %v\n", mesh.Filename, err)
 				continue
@@ -245,14 +247,25 @@ func processLink(link *Link, baseDir string) {
 			// Get dimensions
 			width, height, depth := bbox.Dimensions()
 
+			// Get center coordinates
+			center := bbox.Center
+
 			// Replace mesh with box
 			link.Collision[i].Geometry.Mesh = nil
 			link.Collision[i].Geometry.Box = &Box{
 				Size: fmt.Sprintf("%f %f %f", width, height, depth),
 			}
 
-			fmt.Printf("  Replaced mesh %s with box (%.3f x %.3f x %.3f)\n",
+			// Set or update the collision origin with the bounding box center
+			if link.Collision[i].Origin == nil {
+				link.Collision[i].Origin = &Origin{}
+			}
+			link.Collision[i].Origin.XYZ = fmt.Sprintf("%f %f %f", center.X, center.Y, center.Z)
+
+			fmt.Printf("Replaced mesh %s with box of width, height, depth = (%.5f x %.5f x %.5f)\n",
 				filepath.Base(stlPath), width, height, depth)
+			fmt.Printf("Set collision origin to center: (%.5f, %.5f, %.5f)\n", center.X, center.Y, center.Z)
+			fmt.Println(" ")
 		}
 	}
 }
@@ -263,30 +276,44 @@ func processLink(link *Link, baseDir string) {
 //   - meshes/shoulder.stl (relative path)
 //   - /absolute/path/to/shoulder.stl
 func resolvePackageURI(uri string, baseDir string) string {
+	// fmt.Println("uri: ", uri)
+	// fmt.Println("baseDir: ", baseDir)
 	// Handle package:// URIs
 	if strings.HasPrefix(uri, "package://") {
 		// Remove "package://" prefix
 		relativePath := strings.TrimPrefix(uri, "package://")
+
+		// Strip the package name (first component) from the path
+		// e.g., "ur_description/meshes/ur20/collision/base.stl" -> "meshes/ur20/collision/base.stl"
+		parts := strings.SplitN(relativePath, "/", 2)
+		if len(parts) == 2 {
+			relativePath = parts[1]
+		}
+
 		standardPath := filepath.Join(baseDir, relativePath)
+		// fmt.Println("relativePath: ", relativePath)
+		// fmt.Println("standardPath: ", standardPath)
 
 		// Check if standard path exists
 		if _, err := os.Stat(standardPath); err == nil {
 			return standardPath
 		}
 
-		// If not found, search for the file by basename in baseDir
-		basename := filepath.Base(uri)
+		// If not found, search for a file matching the relative path suffix
 		var foundPath string
 		filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
-			if !info.IsDir() && filepath.Base(path) == basename {
+			if !info.IsDir() && strings.HasSuffix(path, relativePath) {
+				// fmt.Println("path: ", path)
 				foundPath = path
+				// fmt.Println("RETURNING HERE NOW")
 				return filepath.SkipAll
 			}
 			return nil
 		})
+		// fmt.Println("foundPath: ", foundPath)
 
 		if foundPath != "" {
 			return foundPath
